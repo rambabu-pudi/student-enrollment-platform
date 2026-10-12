@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: processing-service
+  labels:
+    app: processing-service
+spec:
+  # Never exceed the Kafka partition count in total consumer threads
+  # (replicas x PROCESSING_CONCURRENCY <= partitions).
+  replicas: 3
+  selector:
+    matchLabels:
+      app: processing-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: processing-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8082"
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: processing-service
+          image: enrollment/processing-service:1.0.0
+          ports:
+            - containerPort: 8082
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: kafka-bootstrap:9092
+            - name: PROCESSING_CONCURRENCY
+              value: "8"
+            - name: PROCESSING_MAX_POLL_RECORDS
+              value: "2000"
+            - name: DB_URL
+              value: jdbc:postgresql://postgres-primary:5432/enrollment?reWriteBatchedInserts=true
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: enrollment-db
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: enrollment-db
+                  key: password
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            failureThreshold: 30
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8082
+            periodSeconds: 10
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: processing-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: processing-service
+  minReplicas: 3
+  # Hard ceiling: 3 pods x 8 threads = 24 = the partition count.
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      # Avoid rebalance storms from flapping.
+      stabilizationWindowSeconds: 300
