@@ -1,0 +1,6 @@
+rootProject.name = "student-enrollment-platform"
+
+include("common")
+include("ingestion-service")
+include("processing-service")
+include("query-service")

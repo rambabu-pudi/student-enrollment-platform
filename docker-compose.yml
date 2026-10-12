@@ -1,0 +1,133 @@
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: enrollment-postgres
+    environment:
+      POSTGRES_DB: enrollment
+      POSTGRES_USER: enrollment
+      POSTGRES_PASSWORD: enrollment
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # Tuned for a write-heavy upsert workload at 24M rows.
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=1GB
+      -c effective_cache_size=3GB
+      -c work_mem=16MB
+      -c maintenance_work_mem=256MB
+      -c checkpoint_completion_target=0.9
+      -c wal_compression=on
+      -c max_wal_size=4GB
+      -c random_page_cost=1.1
+      -c autovacuum_vacuum_scale_factor=0.05
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U enrollment -d enrollment"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: enrollment-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      # KRaft mode: no ZooKeeper dependency.
+      KAFKA_CFG_NODE_ID: "1"
+      KAFKA_CFG_PROCESS_ROLES: "broker,controller"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_CFG_NUM_PARTITIONS: "24"
+      KAFKA_CFG_COMPRESSION_TYPE: "lz4"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes:
+      - kafka-data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  ingestion-service:
+    build:
+      context: .
+      args:
+        MODULE: ingestion-service
+    container_name: enrollment-ingestion
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: "8081"
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+      KAFKA_TOPIC_PARTITIONS: "24"
+      KAFKA_TOPIC_REPLICATION_FACTOR: "1"
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health/readiness || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  processing-service:
+    build:
+      context: .
+      args:
+        MODULE: processing-service
+    container_name: enrollment-processing
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: "8082"
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+      DB_URL: "jdbc:postgresql://postgres:5432/enrollment?reWriteBatchedInserts=true"
+      DB_USERNAME: "enrollment"
+      DB_PASSWORD: "enrollment"
+      PROCESSING_CONCURRENCY: "8"
+      PROCESSING_MAX_POLL_RECORDS: "2000"
+    ports:
+      - "8082:8082"
+    # Scale horizontally with: docker compose up --scale processing-service=4
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8082/actuator/health/readiness || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  query-service:
+    build:
+      context: .
+      args:
+        MODULE: query-service
+    container_name: enrollment-query
+    depends_on:
+      postgres:
+        condition: service_healthy
+      processing-service:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: "8083"
+      DB_URL: "jdbc:postgresql://postgres:5432/enrollment"
+      DB_USERNAME: "enrollment"
+      DB_PASSWORD: "enrollment"
+    ports:
+      - "8083:8083"
+
+volumes:
+  postgres-data:
+  kafka-data:
