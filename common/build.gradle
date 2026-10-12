@@ -1,0 +1,10 @@
+plugins {
+    id 'java-library'
+}
+
+description = 'Shared contracts, canonical model and deduplication key utilities'
+
+dependencies {
+    api 'com.fasterxml.jackson.core:jackson-annotations'
+    api 'jakarta.validation:jakarta.validation-api'
+}
