@@ -1,0 +1,9 @@
+{
+  "correlationId": "sample-json-batch-001",
+  "records": [
+    { "studentId": "S1", "universityId": "U1", "classes": ["C1", "C2", "C3"] },
+    { "studentId": "S1", "universityId": "U2", "classCode": "C3" },
+    { "studentId": "S2", "universityId": "U2", "classes": ["C1", "C3"] },
+    { "studentId": "S2", "universityId": "U2", "classCode": "C1" }
+  ]
+}

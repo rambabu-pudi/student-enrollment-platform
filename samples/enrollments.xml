@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<enrollments>
+    <!-- Duplicate of a row already present in enrollments.csv: collapsed by the database. -->
+    <enrollment>
+        <studentId>S1</studentId>
+        <universityId>U1</universityId>
+        <classCode>C1</classCode>
+    </enrollment>
+    <enrollment>
+        <studentId>S1</studentId>
+        <universityId>U2</universityId>
+        <classCode>C3</classCode>
+    </enrollment>
+    <!-- Attribute form is also accepted. -->
+    <enrollment studentId="S3" universityId="U1" classCode="C7"/>
+</enrollments>
