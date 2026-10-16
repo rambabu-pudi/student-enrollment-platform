@@ -1,0 +1,54 @@
+server:
+  port: ${SERVER_PORT:8081}
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: 200
+    max-swallow-size: -1
+
+spring:
+  application:
+    name: ingestion-service
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  servlet:
+    multipart:
+      # Files are streamed, never fully buffered; this is a safety ceiling only.
+      max-file-size: 2GB
+      max-request-size: 2GB
+      file-size-threshold: 2MB
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+enrollment:
+  kafka:
+    partitions: ${KAFKA_TOPIC_PARTITIONS:24}
+    replication-factor: ${KAFKA_TOPIC_REPLICATION_FACTOR:1}
+  ingestion:
+    dedup-window-size: ${INGESTION_DEDUP_WINDOW:1000000}
+    max-batch-size: ${INGESTION_MAX_BATCH:5000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: ingestion-service
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    root: INFO
+    com.example.enrollment: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
